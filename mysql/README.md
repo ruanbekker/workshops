@@ -1,1 +1,1 @@
-# Workshops/MySQL
+# MySQL Workshop
