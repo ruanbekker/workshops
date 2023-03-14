@@ -23,7 +23,6 @@ This is a kubernetes lab for local development
   * [Deploy a Sample Application with Ingress](#deploy-a-sample-application-with-ingress)
 * [Deploy a Web Application](#deploy-a-web-application)
 * [Create a Helm Chart](#create-a-helm-chart)
-
 ## Setup PreRequisites
 
 To follow this kubernetes workshop we will be installing a couple of required applications so that you can follow step-by-step. This is demonstrated for MacOSx, but I will leave resources for Linux and Windows as well.
@@ -34,6 +33,10 @@ The tools we will require:
 - **Helm**: a package manager for kubernetes, enables you to manage kubernetes applications easier.
 - **Stern**: a log cli client that allows you to tail kubernetes logs from multiple pods at once
 - **k9s**: a kubernetes terminal ui
+
+Resources:
+- https://agrimprasad.com/post/supercharge-kubernetes-setup/
+- https://lobogit.unm.edu/blue/linux-cfg/-/tree/59176530912c8cf195070bb6149ea6498b5b5008/.oh-my-zsh/plugins/kube-ps1
 
 ### Install Docker
 
@@ -132,6 +135,183 @@ helm version
 ## Ingress Controller
 
 ### Setup a Nginx Ingress Controller with Helm
+
+View nodes:
+
+```bash
+kubectl get nodes
+NAME                   STATUS   ROLES           AGE   VERSION
+sektor-control-plane   Ready    control-plane   44h   v1.24.0
+sektor-worker          Ready    <none>          44h   v1.24.0
+```
+
+Add helm repo:
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+```
+
+Install a release:
+
+```bash
+helm upgrade --install ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --namespace ingress-nginx --create-namespace
+```
+
+View pods:
+
+```bash
+kubectl get pods --namespace=ingress-nginx --selector=app.kubernetes.io/component=controller
+NAME                                        READY   STATUS    RESTARTS   AGE
+ingress-nginx-controller-6bf7bc7f94-g7qps   1/1     Running   0          84s
+```
+
+Create deployment:
+
+```bash
+kubectl create deployment demo --image=httpd --port=80
+deployment.apps/demo created
+```
+
+View deployment:
+
+```yaml
+# k get deployment/demo -o yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  labels:
+    app: demo
+  name: demo
+  namespace: default
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: demo
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: demo
+    spec:
+      containers:
+      - image: httpd
+        imagePullPolicy: Always
+        name: httpd
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+```
+
+Create a service:
+
+```bash
+kubectl expose deployment demo
+service/demo exposed
+```
+
+View service:
+
+```yaml
+# k get svc/demo -o yaml
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2022-08-25T06:29:03Z"
+  labels:
+    app: demo
+  name: demo
+  namespace: default
+  resourceVersion: "107443"
+  uid: 39c59b5c-bc2a-4ec8-9819-7925965d1928
+spec:
+  clusterIP: 10.96.228.45
+  clusterIPs:
+  - 10.96.228.45
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: demo
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Create ingress:
+
+```bash
+kubectl create ingress demo-localhost --class=nginx --rule="demo.localdev.me/*=demo:80"
+```
+
+View ingress:
+
+```yaml
+# k get ingress/demo-localhost -o yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  creationTimestamp: "2022-08-25T06:30:06Z"
+  generation: 1
+  name: demo-localhost
+  namespace: default
+  resourceVersion: "107544"
+  uid: 800bf38f-5631-4f54-b59d-07faf6d8efc0
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: demo.localdev.me
+    http:
+      paths:
+      - backend:
+          service:
+            name: demo
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+status:
+  loadBalancer: {}
+```
+
+Expose a port:
+
+```bash
+kubectl port-forward --namespace=ingress-nginx service/ingress-nginx-controller 8080:80
+```
+
+Test
+
+```bash
+curl -I http://demo.localdev.me:8080/
+HTTP/1.1 200 OK
+```
+
+- https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
 
 ### View Nginx Ingress Controller Resources
 
